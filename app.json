@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "SmartLPGApp",
+    "slug": "SmartLPGApp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./src/assets/Logolpg.jpeg",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+
+    "splash": {
+      "image": "./src/assets/Logolpg.jpeg",
+      "resizeMode": "contain",
+      "backgroundColor": "#0b0f1a"
+    },
+
+    "ios": {
+      "supportsTablet": true
+    },
+
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./src/assets/Logolpg.jpeg",
+        "backgroundColor": "#0b0f1a"
+      },
+      "edgeToEdgeEnabled": true
+    },
+
+    "web": {
+      "favicon": "./src/assets/Logolpg.jpeg"
+    }
+  }
+}
