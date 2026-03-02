@@ -1,41 +1,39 @@
 import { collection, query, orderBy, limit, getDocs } from "firebase/firestore";
 import { db } from "./firebase";
 import { logSystemEvent } from "./logger/systemLogger";
+export const generatePrediction = async (uid, currentWeight, cookingSessions) => {
+  try {
+    // 1. Prepare the data for the ML model
+    const requestData = {
+      day_index: Date.now(), // Simplified index
+      prev_usage: 0.25,      // You can later pull this from Firestore history
+      cooking_sessions: cookingSessions || 2, 
+      weight_kg: currentWeight
+    };
 
-export const generatePrediction = async (uid, currentWeight) => {
-  const q = query(
-    collection(db, "usageHistory", uid, "records"),
-    orderBy("timestamp", "desc"),
-    limit(7)
-  );
+    // 2. Call your Python Flask API
+    const response = await fetch("http://10.38.236.151:5000/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestData),
+    });
 
-  const snap = await getDocs(q);
+    const result = await response.json();
+    const predictedUsage = result.predicted_daily_usage;
 
-  let totalUsed = 0;
-  snap.docs.forEach(d => {
-    totalUsed += d.data().usedKg || 0;
-  });
+    // 3. Calculate days left based on ML prediction
+    const daysLeft = predictedUsage > 0 ? Math.floor(currentWeight / predictedUsage) : 0;
+    
+    const refillDate = new Date();
+    refillDate.setDate(refillDate.getDate() + daysLeft);
 
-  const avgPerDay = snap.size ? totalUsed / snap.size : 0.1;
-  const daysLeft = avgPerDay > 0 ? Math.floor(currentWeight / avgPerDay) : 0;
-
-  const refillDate = new Date();
-  refillDate.setDate(refillDate.getDate() + daysLeft);
-
-  const prediction = {
-    avgPerDay: avgPerDay.toFixed(2),
-    daysLeft,
-    refillDate: refillDate.toDateString(),
-    totalUsed: totalUsed.toFixed(2)
-  };
-
-  // 🔥 LOGGING
-  await logSystemEvent({
-    type: "PREDICTION",
-    title: "Usage Prediction Updated",
-    message: `Avg ${prediction.avgPerDay} kg/day, ${prediction.daysLeft} days left`,
-    status: "INFO"
-  });
-
-  return prediction;
+    return {
+      avgPerDay: predictedUsage.toFixed(3),
+      daysLeft: daysLeft,
+      refillDate: refillDate.toDateString(),
+    };
+  } catch (error) {
+    console.error("ML Prediction Error:", error);
+    return { avgPerDay: 0.25, daysLeft: 0, refillDate: "Error" };
+  }
 };

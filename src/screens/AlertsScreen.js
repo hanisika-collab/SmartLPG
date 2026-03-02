@@ -5,100 +5,41 @@ import { LinearGradient } from "expo-linear-gradient";
 import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 import { db, auth } from "../firebase";
 
+// Keeping your existing styles, updating the logic
 export default function AlertsScreen() {
   const [alerts, setAlerts] = useState([]);
 
   useEffect(() => {
     if (!auth.currentUser) return;
-
-    const uid = auth.currentUser.uid;
-
-    const q = query(
-      collection(db, "alerts", uid, "logs"),
-      orderBy("timestamp", "desc")
-    );
-
-    const unsub = onSnapshot(q, (snap) => {
-      const list = snap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setAlerts(list);
+    const q = query(collection(db, "alerts", auth.currentUser.uid, "logs"), orderBy("timestamp", "desc"));
+    return onSnapshot(q, (snap) => {
+      setAlerts(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
-
-    return () => unsub();
   }, []);
 
   const getColor = (severity) => {
-    switch (severity) {
-      case "CRITICAL":
-        return ["#7f1d1d", "#dc2626"];
-      case "WARNING":
-        return ["#78350f", "#f59e0b"];
-      default:
-        return ["#1e3a8a", "#2563eb"];
-    }
+    if (severity === "CRITICAL") return ["#7f1d1d", "#dc2626"];
+    if (severity === "WARNING") return ["#78350f", "#f59e0b"];
+    return ["#1e3a8a", "#2563eb"];
   };
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-
-      {/* HEADER */}
+    <ScrollView style={styles.container}>
       <LinearGradient colors={["#020617", "#0f172a"]} style={styles.header}>
-        <Text style={styles.headerSmall}>Smart LPG Safety System</Text>
-        <Text style={styles.headerBig}>Alerts & Emergency</Text>
-        <Text style={styles.headerSub}>Real-time hazard monitoring</Text>
+        <Text style={styles.headerBig}>Safety Alerts</Text>
       </LinearGradient>
 
-      {/* EMERGENCY PANEL */}
-      <LinearGradient colors={["#450a0a", "#7f1d1d"]} style={styles.emergencyCard}>
-        <Text style={styles.emergencyTitle}>Emergency Protocol</Text>
-        <Text style={styles.emergencyText}>
-          Gas leak detected or critical risk level. Immediate response required.
-        </Text>
-
-        <TouchableOpacity style={styles.emergencyButton}>
-          <Text style={styles.emergencyBtnText}>CALL EMERGENCY SERVICES</Text>
-        </TouchableOpacity>
-      </LinearGradient>
-
-      {/* ALERT LIST */}
-      <Text style={styles.sectionTitle}>Recent Alerts</Text>
-
-      {alerts.length === 0 && (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyText}>No active alerts. System normal.</Text>
-        </View>
+      {alerts.length === 0 ? (
+        <View style={styles.emptyBox}><Text style={styles.emptyText}>All systems normal.</Text></View>
+      ) : (
+        alerts.map((alert) => (
+          <LinearGradient key={alert.id} colors={getColor(alert.severity)} style={styles.alertCard}>
+            <Text style={styles.alertSeverity}>{alert.severity}</Text>
+            <Text style={styles.alertTitle}>{alert.type.replace(/_/g, ' ')}</Text>
+            <Text style={styles.alertMsg}>{alert.message}</Text>
+          </LinearGradient>
+        ))
       )}
-
-      {alerts.map((alert) => (
-        <LinearGradient
-          key={alert.id}
-          colors={getColor(alert.severity)}
-          style={styles.alertCard}
-        >
-          <View style={styles.alertHeader}>
-            <Text style={styles.alertSeverity}>{alert.severity || "INFO"}</Text>
-            <Text style={styles.alertTime}>
-              {alert.timestamp?.toDate?.().toLocaleString() || "now"}
-            </Text>
-          </View>
-
-          <Text style={styles.alertTitle}>{alert.type}</Text>
-          <Text style={styles.alertMsg}>{alert.message}</Text>
-
-          <View style={styles.alertFooter}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>AUTO-GENERATED</Text>
-            </View>
-            <View style={styles.badgeOutline}>
-              <Text style={styles.badgeOutlineText}>SENSOR</Text>
-            </View>
-          </View>
-        </LinearGradient>
-      ))}
-
-      <View style={{ height: 40 }} />
     </ScrollView>
   );
 }
