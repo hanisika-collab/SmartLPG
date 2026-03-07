@@ -1,230 +1,134 @@
-// Enhanced Professional UI version of DashboardScreen
 import React, { useMemo, useEffect, useState, useRef } from "react";
-import { View, Text, StyleSheet, ScrollView, Dimensions, Alert, Animated } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Alert, Animated, Dimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { doc, onSnapshot, collection, query, orderBy, limit } from "firebase/firestore";
-import { auth, db } from "../firebase";
-import { startSimulation } from "../Simulator";
-import { generatePrediction } from "../predictionEngine";
-import { logSystemEvent } from "../logger/systemLogger";
+import { ref, onValue } from "firebase/database"; 
+import { auth, rtdb } from "../firebase"; 
+
 const { width } = Dimensions.get("window");
+const API_BASE = "http://10.38.236.151:5000"; 
+
+// ... (Imports and API_BASE remains same)
 
 export default function DashboardScreen({ route }) {
-  const username = route?.params?.username || "User";
-
   const [gasData, setGasData] = useState(null);
-  const [weeklyUsage, setWeeklyUsage] = useState([]);
-  const [prediction, setPrediction] = useState(null);
-
+  const [initialWeight, setInitialWeight] = useState(null);
+  const [usedToday, setUsedToday] = useState(0);
+  const [alertsSent, setAlertsSent] = useState({ half: false, critical: false });
   const anim = useRef(new Animated.Value(0)).current;
-  const processedRef = useRef(new Set());
+
   useEffect(() => {
     if (!auth.currentUser) return;
-    const uid = auth.currentUser.uid;
+    const statusRef = ref(rtdb, `gasData/${auth.currentUser.uid}/current/status`);
 
-    const unsub = onSnapshot(doc(db, "gasData", uid, "current", "status"), async (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
+    return onValue(statusRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data && data.weight > 0.010) {
         setGasData(data);
 
-        const pred = await generatePrediction(uid, data.weight);
-        setPrediction(pred);
+        // 1. DYNAMIC BASELINE (Initial Weight)
+        // System start aagumbothu irukkura weight-ah 'Full' reference-ah edukkom
+        if (initialWeight === null) {
+          setInitialWeight(data.weight);
+          return;
+        }
 
-      if (data.leak) {
-      Alert.alert("⚠ Gas Leak Detected", "Immediate action required!");
+        // 2. MATHEMATICAL CALCULATIONS
+        const currentWeight = data.weight;
+        const totalCapacity = initialWeight;
+        
+        // Usage = Initial - Current (Fixed difference)
+        const consumption = totalCapacity - currentWeight;
+        const usageFixed = consumption > 0 ? consumption.toFixed(3) : "0.000";
+        setUsedToday(usageFixed);
 
-      logSystemEvent({
-      type: "SAFETY",
-      title: "Gas Leak Detected",
-      message: "Leak sensor triggered",
-      status: "CRITICAL"
-        });
-      }
+        // Percentage Remaining
+        const remainingPercent = (currentWeight / totalCapacity) * 100;
+        const usedPercent = 100 - remainingPercent;
 
+        // 3. MILESTONE ALERTS (50% and 90%)
+        if (usedPercent >= 50 && usedPercent < 90 && !alertsSent.half) {
+          Alert.alert("Cylinder Update", "Half of your gas (50%) has been consumed.");
+          setAlertsSent(prev => ({ ...prev, half: true }));
+        } 
+        else if (usedPercent >= 90 && !alertsSent.critical) {
+          Alert.alert("⚠ CRITICAL", "90% of your gas is finished! Refill soon.");
+          setAlertsSent(prev => ({ ...prev, critical: true }));
+        }
 
+        // Update Gauge
         Animated.timing(anim, {
-          toValue: data.gasPercent,
+          toValue: remainingPercent,
           duration: 800,
           useNativeDriver: false,
         }).start();
       }
     });
-    return () => unsub();
-  }, []);
-useEffect(() => {
-  if (!auth.currentUser) return;
-
-  const uid = auth.currentUser.uid;
-
-  // 🔥 SYSTEM LOG
-  logSystemEvent({
-    type: "SYSTEM",
-    title: "Dashboard Started",
-    message: "User opened dashboard",
-    status: "INFO"
-  });
-
-  startSimulation(uid);
-}, []);
-
-useEffect(() => {
-  if (!auth.currentUser) return;
-
-  const uid = auth.currentUser.uid;
-
-  const q = query(
-    collection(db, "usageHistory", uid, "records"),
-    orderBy("timestamp", "desc"),
-    limit(7)
-  );
-
-  const unsub = onSnapshot(q, (snap) => {
-    const data = snap.docs.map((d) => {
-      const usedKg = d.data().usedKg || 0;
-
-      // ✅ Prevent duplicate logs
-      if (!processedRef.current.has(d.id)) {
-        processedRef.current.add(d.id);
-
-        logSystemEvent({
-          type: "USAGE",
-          title: "Usage Recorded",
-          message: `${usedKg} kg recorded`,
-          status: "NORMAL"
-        });
-      }
-
-      return { value: usedKg };
-    }).reverse();
-
-    setWeeklyUsage(data);
-  });
-
-  return () => unsub();
-}, []);
-
-
-  const maxUsage = useMemo(() => weeklyUsage.length ? Math.max(...weeklyUsage.map(d => d.value)) : 1, [weeklyUsage]);
-
-  const animatedWidth = anim.interpolate({ inputRange: [0, 100], outputRange: ["0%", "100%"] });
-
-  if (!gasData) {
-    return (
-      <View style={styles.loader}>
-        <Text style={{ color: "#fff" }}>Connecting to live sensor...</Text>
-      </View>
-    );
-  }
+  }, [initialWeight, alertsSent]);
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-
-      {/* HEADER */}
-      <LinearGradient colors={["#020617", "#020617", "#0f172a"]} style={styles.header}>
-        <Text style={styles.headerSmall}>Smart LPG System</Text>
-        <Text style={styles.headerBig}>Dashboard</Text>
-        <Text style={styles.headerUser}>Welcome, {username}</Text>
+    <ScrollView style={styles.container}>
+      <LinearGradient colors={["#020617", "#0f172a"]} style={styles.header}>
+        <Text style={styles.headerBig}>LPG Smart Monitor</Text>
       </LinearGradient>
 
-      {/* CYLINDER CARD */}
+      {/* USAGE CARD */}
       <View style={styles.mainCard}>
-        <Text style={styles.cardTitle}>Cylinder Status</Text>
-
-        <View style={styles.circleWrap}>
-          <View style={styles.circleOuter}>
-            <Text style={styles.percent}>{gasData.gasPercent}%</Text>
-            <Text style={styles.circleLabel}>Remaining</Text>
-          </View>
+        <Text style={styles.cardTitle}>Current Session Usage</Text>
+        <View style={styles.statsRow}>
+           <View style={styles.statItem}>
+              <Text style={{...styles.statVal, color: '#fbbf24'}}>{usedToday} kg</Text>
+              <Text style={styles.statLabel}>Total Consumed</Text>
+           </View>
+           <View style={styles.statDivider} />
+           <View style={styles.statItem}>
+              <Text style={styles.statVal}>{gasData?.weight.toFixed(3) || "0.000"} kg</Text>
+              <Text style={styles.statLabel}>Available Weight</Text>
+           </View>
         </View>
 
         <View style={styles.progressBg}>
-          <Animated.View style={[styles.progressFill, { width: animatedWidth }]} />
+          <Animated.View style={[
+            styles.progressFill, 
+            { 
+              width: anim.interpolate({inputRange: [0, 100], outputRange: ["0%", "100%"]}),
+              backgroundColor: usedToday > (initialWeight * 0.9) ? '#ef4444' : '#22c55e'
+            }
+          ]} />
         </View>
-
-        <Text style={styles.subText}>Live Weight: {gasData.weight} kg</Text>
+        <Text style={styles.subText}>Baseline Weight: {initialWeight?.toFixed(3)} kg</Text>
       </View>
 
-      {/* PREDICTION GRID */}
-      {prediction && (
-        <View style={styles.predGrid}>
-          <View style={styles.predBox}>
-            <Text style={styles.predValue}>{prediction.avgPerDay}</Text>
-            <Text style={styles.predLabel}>Kg / Day</Text>
-          </View>
-          <View style={styles.predBox}>
-            <Text style={styles.predValue}>{prediction.daysLeft}</Text>
-            <Text style={styles.predLabel}>Days Left</Text>
-          </View>
-          <View style={styles.predBoxWide}>
-            <Text style={styles.predWideTitle}>Refill Date</Text>
-            <Text style={styles.predWideValue}>{prediction.refillDate}</Text>
-          </View>
-        </View>
-      )}
-
-      {/* WEEKLY USAGE */}
-      <View style={styles.chartCard}>
-        <Text style={styles.cardTitle}>Weekly Consumption</Text>
-        <View style={styles.chartWrap}>
-          {weeklyUsage.map((item, i) => (
-            <View key={i} style={styles.chartItem}>
-              <LinearGradient
-                colors={["#38bdf8", "#22c55e"]}
-                style={[styles.bar, { height: (item.value / maxUsage) * 140 }]}
-              />
-              <Text style={styles.day}>D{i + 1}</Text>
-            </View>
-          ))}
-        </View>
+      {/* ML DATA SET STATUS */}
+      <View style={styles.infoCard}>
+        <Text style={styles.infoTitle}>🤖 ML Training Data</Text>
+        <Text style={styles.infoText}>
+          Recording consumption pattern: {usedToday}kg extracted from {initialWeight}kg capacity.
+        </Text>
       </View>
-
-      {/* ALERT CARD */}
-      <LinearGradient colors={["#7f1d1d", "#991b1b"]} style={styles.alertCard}>
-        <Text style={styles.alertTitle}>Smart Safety System</Text>
-        <Text style={styles.alertText}>Auto alert if gas below 20% or leak detected</Text>
-      </LinearGradient>
-
-      <View style={{ height: 40 }} />
     </ScrollView>
   );
 }
+// ... (Styles stay the same as before)
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0f172a" },
-  loader: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#020617" },
-
-  header: { paddingTop: 50, paddingBottom: 30, paddingHorizontal: 20, borderBottomLeftRadius: 26, borderBottomRightRadius: 26 },
-  headerSmall: { color: "#38bdf8", fontSize: 12, fontWeight: "700" },
-  headerBig: { color: "#fff", fontSize: 28, fontWeight: "900", marginTop: 4 },
-  headerUser: { color: "#cbd5f5", marginTop: 6 },
-
-  mainCard: { backgroundColor: "#020617", margin: 16, borderRadius: 22, padding: 20 },
-  cardTitle: { color: "#38bdf8", fontSize: 15, fontWeight: "800", marginBottom: 12 },
-
-  circleWrap: { alignItems: "center", marginBottom: 14 },
-  circleOuter: { width: 130, height: 130, borderRadius: 65, borderWidth: 8, borderColor: "#22c55e", justifyContent: "center", alignItems: "center" },
-  percent: { color: "#fff", fontSize: 34, fontWeight: "900" },
-  circleLabel: { color: "#94a3b8", fontSize: 12 },
-
-  progressBg: { height: 10, backgroundColor: "#1e293b", borderRadius: 10, overflow: "hidden", marginTop: 10 },
-  progressFill: { height: 10, backgroundColor: "#22c55e" },
-  subText: { color: "#94a3b8", marginTop: 10, textAlign: "center" },
-
-  predGrid: { flexDirection: "row", flexWrap: "wrap", marginHorizontal: 16, gap: 12 },
-  predBox: { backgroundColor: "#020617", width: "48%", borderRadius: 18, padding: 16, alignItems: "center" },
-  predBoxWide: { backgroundColor: "#020617", width: "100%", borderRadius: 18, padding: 16, alignItems: "center" },
-  predValue: { color: "#22c55e", fontSize: 26, fontWeight: "900" },
-  predLabel: { color: "#94a3b8", fontSize: 12 },
-  predWideTitle: { color: "#38bdf8", fontWeight: "800" },
-  predWideValue: { color: "#fff", marginTop: 6, fontSize: 15, fontWeight: "700" },
-
-  chartCard: { backgroundColor: "#020617", margin: 16, borderRadius: 22, padding: 18 },
-  chartWrap: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", height: 170 },
-  chartItem: { alignItems: "center", width: (width - 80) / 7 },
-  bar: { width: 16, borderRadius: 10 },
-  day: { color: "#cbd5f5", fontSize: 11, marginTop: 6 },
-
-  alertCard: { marginHorizontal: 16, borderRadius: 22, padding: 18 },
-  alertTitle: { color: "#fff", fontSize: 16, fontWeight: "900" },
-  alertText: { color: "#fee2e2", marginTop: 6, fontSize: 13 },
+  header: { padding: 30, paddingTop: 60, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
+  headerSmall: { color: "#38bdf8", fontSize: 14, fontWeight: "bold" },
+  headerBig: { color: "#fff", fontSize: 24, fontWeight: "900", marginTop: 5 },
+  mainCard: { backgroundColor: "#020617", margin: 15, borderRadius: 20, padding: 20, elevation: 10 },
+  cardTitle: { color: "#38bdf8", fontSize: 16, fontWeight: "bold", marginBottom: 20 },
+  statsRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  statItem: { alignItems: "center", flex: 1 },
+  statVal: { color: "#fff", fontSize: 22, fontWeight: "bold" },
+  statLabel: { color: "#94a3b8", fontSize: 12, marginTop: 4 },
+  statDivider: { width: 1, height: 40, backgroundColor: "#1e293b" },
+  progressBg: { height: 12, backgroundColor: "#1e293b", borderRadius: 10, overflow: "hidden", marginTop: 25 },
+  progressFill: { height: 12, backgroundColor: "#22c55e" },
+  subText: { color: "#64748b", marginTop: 15, textAlign: "center", fontSize: 12 },
+  infoCard: { backgroundColor: "#1e293b", margin: 15, padding: 20, borderRadius: 20 },
+  infoTitle: { color: "#38bdf8", fontWeight: "bold", marginBottom: 8 },
+  infoText: { color: "#cbd5e1", fontSize: 13, lineHeight: 20 },
+  alertCard: { margin: 15, padding: 20, borderRadius: 20 },
+  alertTitle: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  alertText: { color: "#fecaca", fontSize: 13, marginTop: 5 }
 });
