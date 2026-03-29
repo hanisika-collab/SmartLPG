@@ -24,7 +24,10 @@ const HistoryScreen = () => {
           status: data.status || "INFO",
           timestamp: data.timestamp?.toDate ? data.timestamp.toDate() : new Date()
         };
-      });
+      })
+      // MAIN FIX: Prediction logs-a history-la irundhu hide pandrom
+      .filter(log => log.type !== "PREDICTION"); 
+
       setHistoryData(logs);
       setLoading(false);
     }, (error) => {
@@ -55,56 +58,42 @@ const HistoryScreen = () => {
     }
   };
 
-// ... (Imports and Initial Setup stay the same)
-
   const renderItem = ({ item }) => {
-  // Logic: Message-la irundhu usage weight-ah highlight pandrom
-  const isUsageLog = item.type === "USAGE" || item.title.includes("Weight");
+    const isUsageLog = item.type === "USAGE" || item.title.includes("Weight");
 
-  return (
-    <View style={styles.card}>
-      <View style={styles.left}>
-        <View style={[styles.iconContainer, { backgroundColor: `${getColor(item.status)}25` }]}>
-          <Ionicons name={getIcon(item.type)} size={22} color={getColor(item.status)} />
+    return (
+      <View style={styles.card}>
+        <View style={styles.left}>
+          <View style={[styles.iconContainer, { backgroundColor: `${getColor(item.status)}25` }]}>
+            <Ionicons name={getIcon(item.type)} size={22} color={getColor(item.status)} />
+          </View>
         </View>
-      </View>
 
-      <View style={styles.middle}>
-        <View style={styles.titleRow}>
-          <Text style={styles.title}>
-            {isUsageLog ? "Consumption Recorded" : "Hardware Activity"}
+        <View style={styles.middle}>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>
+              {isUsageLog ? "Daily Gas Consumption" : item.title}
+            </Text>
+          </View>
+
+          <Text style={styles.value}>
+            {isUsageLog 
+              ? `Gas used today: ${item.message}` 
+              : item.message}
           </Text>
-          {item.type === "PREDICTION" && (
-            <View style={styles.aiBadge}>
-              <Text style={styles.aiBadgeText}>AI ANALYTICS</Text>
-            </View>
-          )}
+
+          <Text style={styles.time}>
+            {item.timestamp.toLocaleString('en-IN', { 
+              day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true 
+            })}
+          </Text>
         </View>
 
-        {/* Nee sonna maari Usage difference-ah highlight pandrom */}
-        <Text style={styles.value}>
-          {isUsageLog 
-            ? `Amount Used: ${item.message}` // E.g., Amount Used: 0.050 kg
-            : item.message.replace("tomorrow", "upcoming session")}
-        </Text>
-
-        <Text style={styles.time}>
-          {item.timestamp.toLocaleString('en-IN', { 
-            day: '2-digit', 
-            month: 'short', 
-            hour: '2-digit', 
-            minute: '2-digit',
-            hour12: true 
-          })}
-        </Text>
+        <View style={[styles.statusDot, { backgroundColor: getColor(item.status) }]} />
       </View>
+    );
+  };
 
-      <View style={[styles.statusDot, { backgroundColor: getColor(item.status) }]} />
-    </View>
-  );
-};
-
-// ... (Styles stay the same)
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#38ef7d" /></View>;
 
   return (
@@ -114,10 +103,16 @@ const HistoryScreen = () => {
         <View style={styles.emptyBox}>
           <Ionicons name="time-outline" size={50} color="#334155" />
           <Text style={styles.emptyText}>No logs recorded yet</Text>
-          <Text style={styles.emptySub}>Sensor data and AI predictions will appear here once the system is active.</Text>
+          <Text style={styles.emptySub}>Sensor data and hardware activities will appear here.</Text>
         </View>
       ) : (
-        <FlatList data={historyData} keyExtractor={(item) => item.id} renderItem={renderItem} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }} />
+        <FlatList 
+          data={historyData} 
+          keyExtractor={(item) => item.id} 
+          renderItem={renderItem} 
+          showsVerticalScrollIndicator={false} 
+          contentContainerStyle={{ paddingBottom: 20 }} 
+        />
       )}
     </View>
   );
@@ -135,8 +130,6 @@ const styles = StyleSheet.create({
   middle: { flex: 1 },
   titleRow: { flexDirection: "row", alignItems: "center" },
   title: { color: "#fff", fontSize: 15, fontWeight: "700" },
-  aiBadge: { backgroundColor: "#38ef7d", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, marginLeft: 8 },
-  aiBadgeText: { color: "#000", fontSize: 10, fontWeight: "900" },
   value: { color: "#94a3b8", fontSize: 13, marginTop: 3, lineHeight: 18 },
   time: { color: "#64748b", fontSize: 11, marginTop: 6 },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginLeft: 10 },

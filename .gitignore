@@ -43,4 +43,7 @@ yarn-error.*
 
 .env
 functions/.env
-
+.env
+ML_service/.env
+ML_service/*.json
+*.json
